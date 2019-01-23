@@ -69,17 +69,25 @@ const authorization = (req, res, next) => {
 };
 
 // TODO setup your api routes here
+
+// Get authorized user
 app.get('/api/users', authorization, (req, res, next) => {
   res.status(200).json(req.user);
 });
 
+// Create new user
 app.post('/api/users', (req, res, next) => {
-  User.findOne({emailAddress: req.body.emailAddress}).exec()
+  const emailRegex = /^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$/gi;
+  // test if email is valid
+  if (emailRegex.test(req.body.emailAddress)) {
+    // Check for existing email address
+    User.findOne({emailAddress: req.body.emailAddress}).exec()
     .then(user => {
       if (!user) {
         const password = req.body.password;
+        // chech if password is not empty before hashing
         if (password && password.length > 0) {
-          bcrypt.hash(password, 10)
+          bcrypt.hash(password, 10) // hash password and create new user
           .then(hash => {
             const user = new User({
               firstName: req.body.firstName,
@@ -109,6 +117,7 @@ app.post('/api/users', (req, res, next) => {
             errorMessage = 'Password path cannot be empty!';
           }
 
+          // if password is empty
           createAndThrowError(errorMessage, 401, next);
         }
       } else {
@@ -116,10 +125,14 @@ app.post('/api/users', (req, res, next) => {
       }
     })
     .catch(error => createAndThrowError(error.message, 401, next));
+  } else {
+    createAndThrowError('The email is not valid!', 401, next);
+  }
 });
 
+// get all courses populated with users that own each course
 app.get('/api/courses', (req, res, next) => {
-  Course.find().populate('user').exec()
+  Course.find().populate('user', 'firstName lastName').exec()
     .then(courses => {
       res.status(200).json({
         courseCount: courses.length,
@@ -131,8 +144,9 @@ app.get('/api/courses', (req, res, next) => {
     })
 });
 
+// get course with provided id and populate it with user who owns it
 app.get('/api/courses/:id', (req, res, next) => {
-  Course.findById(req.params.id).populate('user').exec()
+  Course.findById(req.params.id).populate('user', 'firstName lastName').exec()
     .then(course => {
       if (course) {
         res.status(200).json({
@@ -146,6 +160,7 @@ app.get('/api/courses/:id', (req, res, next) => {
     .catch(error => {});
 });
 
+// create new course
 app.post('/api/courses', authorization, (req, res, next) => {
   const course = new Course({
     user: req.user._id,
@@ -163,27 +178,43 @@ app.post('/api/courses', authorization, (req, res, next) => {
     .catch(error => createAndThrowError(error.message, 400, next));
 });
 
+// update course
 app.put('/api/courses/:id', authorization, (req, res, next) => {
-  const updatedDocument = {
-    user: req.user._id,
-    title: req.body.title,
-    description: req.body.description,
-    estimatedTime: req.body.estimatedTime,
-    materialsNeeded: req.body.materialsNeeded
-  };
-
-  Course.update({_id: req.params.id}, updatedDocument, {runValidators: true}, (error, course) => {
-    if (error) {
-      createAndThrowError(error.message, 500, next);
-    }
-
-    res.status(204).end();
-  });
+  Course.findById(req.params.id).exec()
+    .then(course => {
+      if (course.user === req.user) {
+        const updatedDocument = {
+          user: req.user._id,
+          title: req.body.title,
+          description: req.body.description,
+          estimatedTime: req.body.estimatedTime,
+          materialsNeeded: req.body.materialsNeeded
+        };
+      
+        Course.updateOne({_id: req.params.id}, updatedDocument, {runValidators: true}, (error, course) => {
+          if (error) {
+            createAndThrowError(error.message, 500, next);
+          }
+      
+          res.status(204).end();
+        });
+      } else {
+        createAndThrowError('Authorized user cannot make changes to this course!', 403, next);
+      }
+    })
+    .catch(error => createAndThrowError(error.message, 500, next));
 });
 
+// delete course 
 app.delete('/api/courses/:id', authorization, (req, res, next) => {
-  Course.deleteOne({_id: req.params.id}, err => createAndThrowError(err.message, 500, next));
-  res.status(204).end();
+  Course.findById(req.params.id).exec()
+    .then(course => {
+      if (course.user === req.user) {
+        Course.deleteOne({_id: req.params.id}, err => createAndThrowError(err.message, 500, next));
+        res.status(204).end();
+      }
+    })
+    .catch(error => createAndThrowError(error.message, 500, next));
 });
 
 // setup a friendly greeting for the root route
