@@ -150,8 +150,7 @@ app.get('/api/courses/:id', (req, res, next) => {
     .then(course => {
       if (course) {
         res.status(200).json({
-          course,
-          user: course.user
+          course
         });
       } else {
         createAndThrowError(`The course with id ${req.params.id} is not found!`, 401, next);
@@ -182,7 +181,7 @@ app.post('/api/courses', authorization, (req, res, next) => {
 app.put('/api/courses/:id', authorization, (req, res, next) => {
   Course.findById(req.params.id).exec()
     .then(course => {
-      if (course.user === req.user) {
+      if (course.user.toString() === req.user._id.toString()) {
         const updatedDocument = {
           user: req.user._id,
           title: req.body.title,
@@ -199,7 +198,7 @@ app.put('/api/courses/:id', authorization, (req, res, next) => {
           res.status(204).end();
         });
       } else {
-        createAndThrowError('Authorized user cannot make changes to this course!', 403, next);
+        createAndThrowError('Currently authorized user cannot make changes to this course!', 403, next);
       }
     })
     .catch(error => createAndThrowError(error.message, 500, next));
@@ -209,9 +208,16 @@ app.put('/api/courses/:id', authorization, (req, res, next) => {
 app.delete('/api/courses/:id', authorization, (req, res, next) => {
   Course.findById(req.params.id).exec()
     .then(course => {
-      if (course.user === req.user) {
-        Course.deleteOne({_id: req.params.id}, err => createAndThrowError(err.message, 500, next));
-        res.status(204).end();
+      if (course.user.toString() === req.user._id.toString()) {
+        Course.deleteOne({_id: req.params.id}, err => {
+          if (err) {
+            createAndThrowError(err.message, 500, next);
+          }
+
+          res.status(204).end();
+        });
+      } else {
+        createAndThrowError('Currently authorized user cannot make changes to this course!', 403, next);
       }
     })
     .catch(error => createAndThrowError(error.message, 500, next));
